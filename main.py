@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-LoginTabSystem - Cybersecurity Modal 0 Edition
-Modern login system with tab-based authentication
+LoginTabSystem - Cybersecurity Modal 1 Edition (Enhanced)
+Modern login system with tab-based authentication + Beautiful UI
 Optimized for Termux (Android Terminal)
 """
 
@@ -16,9 +16,11 @@ import secrets
 import re
 import time
 from typing import Dict, Optional, Tuple
+import threading
 
-# Color codes untuk terminal
+# Color codes untuk terminal dengan gradasi
 class Colors:
+    # Basic Colors
     HEADER = '\033[95m'
     OKBLUE = '\033[94m'
     OKCYAN = '\033[96m'
@@ -28,6 +30,105 @@ class Colors:
     ENDC = '\033[0m'
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
+    
+    # Bright Colors
+    BRIGHT_CYAN = '\033[96m'
+    BRIGHT_GREEN = '\033[92m'
+    BRIGHT_YELLOW = '\033[93m'
+    BRIGHT_RED = '\033[91m'
+    
+    # Background
+    BG_DARK = '\033[40m'
+    BG_BLUE = '\033[44m'
+    
+    # Additional Effects
+    DIM = '\033[2m'
+    BLINK = '\033[5m'
+
+# ============================================
+# ANIMATION & EFFECTS
+# ============================================
+
+class Effects:
+    @staticmethod
+    def loading_animation(duration: float = 2, message: str = "Processing"):
+        """Animated loading bar"""
+        frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+        end_time = time.time() + duration
+        
+        while time.time() < end_time:
+            for frame in frames:
+                remaining = end_time - time.time()
+                if remaining <= 0:
+                    break
+                sys.stdout.write(f'\r{Colors.OKBLUE}{frame} {message}...{Colors.ENDC}')
+                sys.stdout.flush()
+                time.sleep(0.1)
+        sys.stdout.write('\r' + ' ' * 50 + '\r')
+        sys.stdout.flush()
+    
+    @staticmethod
+    def progress_bar(current: int, total: int, width: int = 30):
+        """Display progress bar"""
+        percent = current / total
+        filled = int(width * percent)
+        bar = '█' * filled + '░' * (width - filled)
+        print(f'\r{Colors.OKGREEN}[{bar}] {int(percent * 100)}%{Colors.ENDC}', end='', flush=True)
+    
+    @staticmethod
+    def typing_effect(text: str, speed: float = 0.02):
+        """Typing animation effect"""
+        for char in text:
+            sys.stdout.write(char)
+            sys.stdout.flush()
+            time.sleep(speed)
+        print()
+    
+    @staticmethod
+    def fade_in_text(text: str, color: str = Colors.HEADER):
+        """Fade in effect with color"""
+        print(f"{color}{text}{Colors.ENDC}")
+    
+    @staticmethod
+    def print_box(title: str, content: list, width: int = 60, color: str = Colors.HEADER):
+        """Print beautiful box with content"""
+        print(f"\n{color}╔{'═' * (width - 2)}╗{Colors.ENDC}")
+        print(f"{color}║ {title.center(width - 4)} ║{Colors.ENDC}")
+        print(f"{color}╠{'═' * (width - 2)}╣{Colors.ENDC}")
+        
+        for line in content:
+            if len(line) < width - 4:
+                padding = width - 4 - len(line)
+                print(f"{color}║{Colors.ENDC} {line}{' ' * padding} {color}║{Colors.ENDC}")
+            else:
+                print(f"{color}║{Colors.ENDC} {line[:width-5]}{color}║{Colors.ENDC}")
+        
+        print(f"{color}╚{'═' * (width - 2)}╝{Colors.ENDC}\n")
+    
+    @staticmethod
+    def print_table(headers: list, rows: list):
+        """Print formatted table"""
+        if not rows:
+            print(f"{Colors.WARNING}No data to display{Colors.ENDC}")
+            return
+        
+        # Calculate column widths
+        col_widths = [len(str(h)) for h in headers]
+        for row in rows:
+            for i, cell in enumerate(row):
+                col_widths[i] = max(col_widths[i], len(str(cell)))
+        
+        # Header
+        header_row = " │ ".join(f"{Colors.BOLD}{h:<{w}}{Colors.ENDC}" for h, w in zip(headers, col_widths))
+        print(f"\n {header_row}")
+        print(" " + "─┼─".join("─" * w for w in col_widths))
+        
+        # Rows
+        for i, row in enumerate(rows):
+            row_str = " │ ".join(f"{str(cell):<{w}}" for cell, w in zip(row, col_widths))
+            color = Colors.OKGREEN if i % 2 == 0 else Colors.OKCYAN
+            print(f" {color}{row_str}{Colors.ENDC}")
+        print()
 
 # ============================================
 # DATABASE SETUP
@@ -65,7 +166,8 @@ class Database:
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 last_login TIMESTAMP,
                 failed_attempts INTEGER DEFAULT 0,
-                locked_until TIMESTAMP
+                locked_until TIMESTAMP,
+                avatar_color TEXT DEFAULT '🟦'
             )
         ''')
         
@@ -285,7 +387,7 @@ class UserManager:
             return False, f"Error registrasi: {str(e)}"
     
     def login(self, username: str, password: str, ip: str = "127.0.0.1") -> Tuple[bool, str, Optional[int]]:
-        """Login user"""
+        """Login user with animated progress"""
         user = self.db.fetch_one(
             'SELECT id, password_hash, salt, is_active, locked_until, failed_attempts FROM users WHERE username = ?',
             (username,)
@@ -294,6 +396,10 @@ class UserManager:
         if not user:
             self.audit.log_action(None, 'LOGIN_FAILED', f'User tidak ditemukan: {username}', ip)
             return False, "Username atau password salah", None
+        
+        # Show progress
+        Effects.progress_bar(25, 100)
+        time.sleep(0.3)
         
         # Check if account is locked
         if user['locked_until']:
@@ -308,6 +414,9 @@ class UserManager:
                     'UPDATE users SET locked_until = NULL, failed_attempts = 0 WHERE id = ?',
                     (user['id'],)
                 )
+        
+        Effects.progress_bar(50, 100)
+        time.sleep(0.3)
         
         # Verify password
         if not Security.verify_password(password, user['password_hash'], user['salt']):
@@ -329,6 +438,9 @@ class UserManager:
                 self.audit.log_action(user['id'], 'LOGIN_FAILED', f'Percobaan ke-{failed_attempts}', ip)
                 return False, "Username atau password salah", None
         
+        Effects.progress_bar(75, 100)
+        time.sleep(0.3)
+        
         if not user['is_active']:
             return False, "Akun tidak aktif", None
         
@@ -345,6 +457,9 @@ class UserManager:
             'UPDATE users SET last_login = ?, failed_attempts = 0, locked_until = NULL WHERE id = ?',
             (datetime.now().isoformat(), user['id'])
         )
+        
+        Effects.progress_bar(100, 100)
+        print()
         
         self.audit.log_action(user['id'], 'LOGIN_SUCCESS', f'Login berhasil dari {ip}', ip)
         return True, "Login berhasil!", user['id']
@@ -391,9 +506,21 @@ class UserManager:
         return self.db.fetch_all(
             'SELECT id, username, email, role, is_active, created_at, last_login FROM users ORDER BY created_at DESC'
         )
+    
+    def get_user_stats(self) -> dict:
+        """Get user statistics"""
+        total = self.db.fetch_one('SELECT COUNT(*) as count FROM users')
+        admins = self.db.fetch_one('SELECT COUNT(*) as count FROM users WHERE role = "admin"')
+        active = self.db.fetch_one('SELECT COUNT(*) as count FROM users WHERE is_active = 1')
+        
+        return {
+            'total': total['count'] if total else 0,
+            'admins': admins['count'] if admins else 0,
+            'active': active['count'] if active else 0
+        }
 
 # ============================================
-# CLI INTERFACE
+# CLI INTERFACE - ENHANCED
 # ============================================
 
 class LoginSystem:
@@ -408,19 +535,22 @@ class LoginSystem:
         """Clear terminal screen"""
         os.system('clear' if os.name == 'posix' else 'cls')
     
-    def print_header(self, title: str):
-        """Print formatted header"""
-        print(f"\n{Colors.HEADER}{Colors.BOLD}╔{'═' * 50}╗{Colors.ENDC}")
-        print(f"{Colors.HEADER}{Colors.BOLD}║ {title.center(48)} ║{Colors.ENDC}")
-        print(f"{Colors.HEADER}{Colors.BOLD}╚{'═' * 50}╝{Colors.ENDC}\n")
+    def print_header(self, title: str, subtitle: str = ""):
+        """Print animated header"""
+        width = 60
+        print(f"\n{Colors.HEADER}{Colors.BOLD}╔{'═' * (width - 2)}╗{Colors.ENDC}")
+        print(f"{Colors.HEADER}{Colors.BOLD}║ {title.center(width - 4)} ║{Colors.ENDC}")
+        if subtitle:
+            print(f"{Colors.OKCYAN}{Colors.BOLD}║ {subtitle.center(width - 4)} ║{Colors.ENDC}")
+        print(f"{Colors.HEADER}{Colors.BOLD}╚{'═' * (width - 2)}╝{Colors.ENDC}\n")
     
     def print_success(self, message: str):
-        """Print success message"""
-        print(f"{Colors.OKGREEN}✓ {message}{Colors.ENDC}")
+        """Print success message with animation"""
+        print(f"{Colors.OKGREEN}{'✓' * 2} {message}{Colors.ENDC}")
     
     def print_error(self, message: str):
         """Print error message"""
-        print(f"{Colors.FAIL}✗ {message}{Colors.ENDC}")
+        print(f"{Colors.FAIL}{'✗' * 2} {message}{Colors.ENDC}")
     
     def print_warning(self, message: str):
         """Print warning message"""
@@ -430,31 +560,46 @@ class LoginSystem:
         """Print info message"""
         print(f"{Colors.OKCYAN}ℹ {message}{Colors.ENDC}")
     
+    def print_divider(self, char: str = "─"):
+        """Print decorative divider"""
+        print(f"{Colors.DIM}{char * 60}{Colors.ENDC}")
+    
     def menu_main(self):
-        """Main menu"""
+        """Main menu with enhanced UI"""
         while True:
             self.clear_screen()
-            self.print_header("CYBERSECURITY LOGIN SYSTEM")
-            print(f"{Colors.BOLD}Modal 0 Edition - Termux Compatible{Colors.ENDC}")
-            print()
+            self.print_header("🔐 CYBERSECURITY LOGIN SYSTEM", "Modal 1 Edition - Enhanced UI")
             
             if self.current_user_id:
-                print(f"{Colors.OKGREEN}Status: Logged in as {self.current_username}{Colors.ENDC}\n")
-                print("[1] Dashboard")
-                print("[2] Change Password")
-                print("[3] View Profile")
-                print("[4] Logout")
-                print("[5] Admin Panel")
-                print("[6] Exit")
+                user = self.user_manager.get_user(self.current_user_id)
+                status_color = Colors.OKGREEN if user['role'] == 'admin' else Colors.OKCYAN
+                role_badge = f"[{user['role'].upper()}]"
+                
+                print(f"{status_color}👤 Logged in as: {Colors.BOLD}{self.current_username}{Colors.ENDC} {role_badge}\n")
+                print(f"{Colors.BOLD}Dashboard:{Colors.ENDC}")
+                print(f"  {Colors.OKBLUE}[1]{Colors.ENDC}  Dashboard")
+                print(f"  {Colors.OKBLUE}[2]{Colors.ENDC}  Change Password")
+                print(f"  {Colors.OKBLUE}[3]{Colors.ENDC}  View Profile")
+                print(f"  {Colors.OKBLUE}[4]{Colors.ENDC}  Activity Log")
+                if user['role'] == 'admin':
+                    print(f"\n{Colors.BOLD}Admin Tools:{Colors.ENDC}")
+                    print(f"  {Colors.WARNING}[5]{Colors.ENDC}  Admin Panel")
+                print(f"\n{Colors.BOLD}Account:{Colors.ENDC}")
+                print(f"  {Colors.FAIL}[6]{Colors.ENDC}  Logout")
+                print(f"  {Colors.FAIL}[0]{Colors.ENDC}  Exit")
             else:
-                print(f"{Colors.OKCYAN}Status: Not logged in{Colors.ENDC}\n")
-                print("[1] Login")
-                print("[2] Register")
-                print("[3] Audit Log")
-                print("[4] Exit")
+                print(f"{Colors.WARNING}Status: Not logged in{Colors.ENDC}\n")
+                print(f"{Colors.BOLD}Authentication:{Colors.ENDC}")
+                print(f"  {Colors.OKGREEN}[1]{Colors.ENDC}  Login")
+                print(f"  {Colors.OKGREEN}[2]{Colors.ENDC}  Register")
+                print(f"\n{Colors.BOLD}Info:{Colors.ENDC}")
+                print(f"  {Colors.OKCYAN}[3]{Colors.ENDC}  Audit Log")
+                print(f"  {Colors.FAIL}[0]{Colors.ENDC}  Exit")
             
-            print()
-            choice = input(f"{Colors.BOLD}Pilih menu [{Colors.OKBLUE}1-{4 if not self.current_user_id else 6}{Colors.BOLD}]: {Colors.ENDC}").strip()
+            self.print_divider()
+            
+            max_choice = 6 if self.current_user_id else 3
+            choice = input(f"{Colors.BOLD}Pilih menu [{Colors.OKBLUE}0-{max_choice}{Colors.BOLD}]: {Colors.ENDC}").strip()
             
             if not self.current_user_id:
                 if choice == '1':
@@ -463,9 +608,8 @@ class LoginSystem:
                     self.menu_register()
                 elif choice == '3':
                     self.menu_audit_log()
-                elif choice == '4':
-                    print(f"\n{Colors.OKGREEN}Terima kasih! Goodbye...{Colors.ENDC}\n")
-                    sys.exit(0)
+                elif choice == '0':
+                    self.menu_exit()
                 else:
                     self.print_error("Pilihan tidak valid")
                     time.sleep(1)
@@ -477,24 +621,28 @@ class LoginSystem:
                 elif choice == '3':
                     self.menu_profile()
                 elif choice == '4':
-                    self.logout()
+                    self.menu_activity()
                 elif choice == '5':
                     self.menu_admin()
                 elif choice == '6':
                     self.logout()
-                    print(f"\n{Colors.OKGREEN}Goodbye!{Colors.ENDC}\n")
-                    sys.exit(0)
+                elif choice == '0':
+                    self.logout()
+                    self.menu_exit()
                 else:
                     self.print_error("Pilihan tidak valid")
                     time.sleep(1)
     
     def menu_login(self):
-        """Login menu"""
+        """Login menu with animation"""
         self.clear_screen()
-        self.print_header("LOGIN")
+        self.print_header("🔑 LOGIN", "Enter your credentials")
         
-        username = input(f"{Colors.BOLD}Username: {Colors.ENDC}").strip()
-        password = input(f"{Colors.BOLD}Password: {Colors.ENDC}").strip()
+        username = input(f"{Colors.BOLD}└─ Username: {Colors.ENDC}").strip()
+        password = input(f"{Colors.BOLD}└─ Password: {Colors.ENDC}").strip()
+        
+        print()
+        Effects.loading_animation(2, "Verifying credentials")
         
         success, message, user_id = self.user_manager.login(username, password)
         
@@ -502,88 +650,137 @@ class LoginSystem:
             self.current_user_id = user_id
             self.current_username = username
             self.print_success(message)
+            Effects.loading_animation(1.5, "Loading dashboard")
         else:
             self.print_error(message)
         
-        time.sleep(2)
+        time.sleep(1)
     
     def menu_register(self):
-        """Register menu"""
+        """Register menu with better formatting"""
         self.clear_screen()
-        self.print_header("REGISTER")
+        self.print_header("📝 REGISTER", "Create a new account")
         
-        username = input(f"{Colors.BOLD}Username: {Colors.ENDC}").strip()
-        email = input(f"{Colors.BOLD}Email: {Colors.ENDC}").strip()
-        password = input(f"{Colors.BOLD}Password (min 8 karakter, uppercase, lowercase, angka, spesial): {Colors.ENDC}").strip()
-        password_confirm = input(f"{Colors.BOLD}Confirm Password: {Colors.ENDC}").strip()
+        print(f"{Colors.DIM}Password requirements:{Colors.ENDC}")
+        print(f"  • Minimum 8 karakter")
+        print(f"  • Huruf besar (A-Z)")
+        print(f"  • Huruf kecil (a-z)")
+        print(f"  • Angka (0-9)")
+        print(f"  • Karakter spesial (!@#$%^&*)\n")
+        
+        username = input(f"{Colors.BOLD}└─ Username: {Colors.ENDC}").strip()
+        email = input(f"{Colors.BOLD}└─ Email: {Colors.ENDC}").strip()
+        password = input(f"{Colors.BOLD}└─ Password: {Colors.ENDC}").strip()
+        password_confirm = input(f"{Colors.BOLD}└─ Confirm Password: {Colors.ENDC}").strip()
         
         if password != password_confirm:
             self.print_error("Password tidak cocok")
             time.sleep(2)
             return
         
+        print()
+        Effects.loading_animation(2, "Creating account")
+        
         success, message = self.user_manager.register(username, email, password)
         
         if success:
             self.print_success(message)
+            self.print_info("Anda sekarang dapat login")
         else:
             self.print_error(message)
         
         time.sleep(2)
     
     def menu_dashboard(self):
-        """User dashboard"""
+        """Enhanced dashboard"""
         self.clear_screen()
-        self.print_header(f"DASHBOARD - {self.current_username.upper()}")
+        self.print_header(f"📊 DASHBOARD", f"Welcome {self.current_username}!")
         
         user = self.user_manager.get_user(self.current_user_id)
         if user:
-            print(f"Username: {Colors.OKBLUE}{user['username']}{Colors.ENDC}")
-            print(f"Email: {Colors.OKBLUE}{user['email']}{Colors.ENDC}")
-            print(f"Role: {Colors.OKCYAN}{user['role']}{Colors.ENDC}")
-            print(f"Joined: {Colors.OKCYAN}{user['created_at']}{Colors.ENDC}")
-            print(f"Last Login: {Colors.OKCYAN}{user['last_login']}{Colors.ENDC}")
+            # User Info Box
+            content = [
+                f"Username: {Colors.OKBLUE}{user['username']}{Colors.ENDC}",
+                f"Email: {Colors.OKBLUE}{user['email']}{Colors.ENDC}",
+                f"Role: {Colors.OKCYAN}{user['role'].upper()}{Colors.ENDC}",
+                f"Status: {Colors.OKGREEN}Active{Colors.ENDC}",
+                f"Joined: {user['created_at'][:10]}",
+            ]
+            
+            if user['last_login']:
+                content.append(f"Last Login: {user['last_login']}")
+            
+            Effects.print_box("PROFILE INFORMATION", content, width=60)
             
             # Recent activity
-            print(f"\n{Colors.BOLD}Recent Activity:{Colors.ENDC}")
+            print(f"{Colors.BOLD}📋 Recent Activity:{Colors.ENDC}")
             logs = self.audit.get_user_logs(self.current_user_id, 5)
-            for log in logs:
-                print(f"  • {log['action']} - {log['details']} ({log['timestamp']})")
+            if logs:
+                for i, log in enumerate(logs, 1):
+                    action_color = Colors.OKGREEN if 'SUCCESS' in log['action'] else Colors.WARNING if 'FAILED' in log['action'] else Colors.OKCYAN
+                    print(f"  {i}. {action_color}{log['action']}{Colors.ENDC}")
+                    print(f"     → {log['details']}")
+                    print(f"     🕐 {log['timestamp']}\n")
+            else:
+                self.print_info("Belum ada aktivitas")
         
         print()
         input(f"{Colors.BOLD}Press Enter to continue...{Colors.ENDC}")
     
     def menu_profile(self):
-        """View profile"""
+        """View profile with enhanced display"""
         self.clear_screen()
-        self.print_header("PROFILE")
+        self.print_header("👤 PROFILE", "User Information")
         
         user = self.user_manager.get_user(self.current_user_id)
         if user:
-            print(f"ID: {Colors.OKBLUE}{user['id']}{Colors.ENDC}")
-            print(f"Username: {Colors.OKBLUE}{user['username']}{Colors.ENDC}")
-            print(f"Email: {Colors.OKBLUE}{user['email']}{Colors.ENDC}")
-            print(f"Role: {Colors.OKCYAN}{user['role']}{Colors.ENDC}")
-            print(f"Active: {Colors.OKGREEN}Yes{Colors.ENDC if user['is_active'] else Colors.FAIL}No{Colors.ENDC}")
-            print(f"Created: {Colors.OKCYAN}{user['created_at']}{Colors.ENDC}")
-            print(f"Last Updated: {Colors.OKCYAN}{user['last_login']}{Colors.ENDC}")
+            profile_data = [
+                f"ID: {Colors.OKBLUE}#{user['id']}{Colors.ENDC}",
+                f"Username: {Colors.OKBLUE}{user['username']}{Colors.ENDC}",
+                f"Email: {Colors.OKBLUE}{user['email']}{Colors.ENDC}",
+                f"Role: {Colors.OKCYAN}{user['role'].upper()}{Colors.ENDC}",
+                f"Status: {Colors.OKGREEN}Active{Colors.ENDC}",
+                f"Member Since: {user['created_at'][:10]}",
+                f"Last Activity: {user['last_login'] if user['last_login'] else 'Never'}"
+            ]
+            
+            Effects.print_box("YOUR PROFILE", profile_data, width=60, color=Colors.OKGREEN)
         
-        print()
+        input(f"{Colors.BOLD}Press Enter to continue...{Colors.ENDC}")
+    
+    def menu_activity(self):
+        """View user activity log"""
+        self.clear_screen()
+        self.print_header("📝 ACTIVITY LOG", "Your Recent Actions")
+        
+        logs = self.audit.get_user_logs(self.current_user_id, 15)
+        if logs:
+            for i, log in enumerate(logs, 1):
+                action_color = Colors.OKGREEN if 'SUCCESS' in log['action'] else Colors.FAIL if 'FAILED' in log['action'] else Colors.OKCYAN
+                print(f"{i:2}. {action_color}{log['action']:<15}{Colors.ENDC} │ {log['details']}")
+                print(f"    └─ {Colors.DIM}{log['timestamp']} from {log['ip_address']}{Colors.ENDC}\n")
+        else:
+            self.print_info("Belum ada aktivitas tercatat")
+        
         input(f"{Colors.BOLD}Press Enter to continue...{Colors.ENDC}")
     
     def menu_change_password(self):
-        """Change password menu"""
+        """Change password with validation"""
         self.clear_screen()
-        self.print_header("CHANGE PASSWORD")
+        self.print_header("🔐 CHANGE PASSWORD", "Update your password")
         
         old_password = input(f"{Colors.BOLD}Old Password: {Colors.ENDC}").strip()
+        print()
         new_password = input(f"{Colors.BOLD}New Password: {Colors.ENDC}").strip()
-        new_password_confirm = input(f"{Colors.BOLD}Confirm New Password: {Colors.ENDC}").strip()
+        new_password_confirm = input(f"{Colors.BOLD}Confirm Password: {Colors.ENDC}").strip()
         
         if new_password != new_password_confirm:
             self.print_error("Password baru tidak cocok")
             time.sleep(2)
             return
+        
+        print()
+        Effects.loading_animation(1.5, "Validating and updating")
         
         success, message = self.user_manager.change_password(self.current_user_id, old_password, new_password)
         
@@ -595,30 +792,28 @@ class LoginSystem:
         time.sleep(2)
     
     def menu_audit_log(self):
-        """View audit log"""
+        """View system audit log"""
         self.clear_screen()
-        self.print_header("AUDIT LOG")
+        self.print_header("📊 AUDIT LOG", "System Activity")
         
-        logs = self.audit.get_logs(20)
+        logs = self.audit.get_logs(30)
         if logs:
-            for log in logs:
-                user_info = f"User ID: {log['user_id']}" if log['user_id'] else "System"
-                print(f"{Colors.OKCYAN}[{log['timestamp']}]{Colors.ENDC}")
-                print(f"  Action: {Colors.BOLD}{log['action']}{Colors.ENDC}")
-                print(f"  {user_info}")
-                print(f"  Details: {log['details']}")
-                print(f"  IP: {log['ip_address']}")
-                print()
+            for i, log in enumerate(logs, 1):
+                user_info = f"User#{log['user_id']}" if log['user_id'] else "SYSTEM"
+                action_color = Colors.OKGREEN if 'SUCCESS' in log['action'] else Colors.FAIL if 'FAILED' in log['action'] else Colors.WARNING
+                
+                print(f"{i:2}. {action_color}[{log['action']}]{Colors.ENDC} by {Colors.OKCYAN}{user_info}{Colors.ENDC}")
+                print(f"    └─ {log['details']}")
+                print(f"    └─ {Colors.DIM}{log['timestamp']} | IP: {log['ip_address']}{Colors.ENDC}\n")
         else:
             self.print_info("Belum ada audit log")
         
-        print()
         input(f"{Colors.BOLD}Press Enter to continue...{Colors.ENDC}")
     
     def menu_admin(self):
-        """Admin panel"""
+        """Enhanced admin panel"""
         self.clear_screen()
-        self.print_header("ADMIN PANEL")
+        self.print_header("⚙️  ADMIN PANEL", "System Administration")
         
         user = self.user_manager.get_user(self.current_user_id)
         if not user or user['role'] != 'admin':
@@ -626,38 +821,85 @@ class LoginSystem:
             time.sleep(2)
             return
         
-        print("[1] List All Users")
-        print("[2] View All Audit Logs")
-        print("[3] Back")
+        # Admin Statistics
+        stats = self.user_manager.get_user_stats()
+        print(f"{Colors.BOLD}📊 System Statistics:{Colors.ENDC}")
+        print(f"  • Total Users: {Colors.OKGREEN}{stats['total']}{Colors.ENDC}")
+        print(f"  • Admin Accounts: {Colors.WARNING}{stats['admins']}{Colors.ENDC}")
+        print(f"  • Active Users: {Colors.OKBLUE}{stats['active']}{Colors.ENDC}")
+        print()
+        
+        print(f"{Colors.BOLD}Admin Options:{Colors.ENDC}")
+        print(f"  {Colors.OKBLUE}[1]{Colors.ENDC}  List All Users")
+        print(f"  {Colors.OKBLUE}[2]{Colors.ENDC}  View All Audit Logs")
+        print(f"  {Colors.OKBLUE}[3]{Colors.ENDC}  Back")
         print()
         
         choice = input(f"{Colors.BOLD}Pilih [{Colors.OKBLUE}1-3{Colors.BOLD}]: {Colors.ENDC}").strip()
         
         if choice == '1':
-            self.clear_screen()
-            self.print_header("ALL USERS")
-            users = self.user_manager.list_users()
-            if users:
-                print(f"{Colors.BOLD}{'ID':<5} {'Username':<15} {'Email':<25} {'Role':<10} {'Active':<7}{Colors.ENDC}")
-                print("─" * 70)
-                for u in users:
-                    active = "Yes" if u['is_active'] else "No"
-                    print(f"{u['id']:<5} {u['username']:<15} {u['email']:<25} {u['role']:<10} {active:<7}")
-            else:
-                self.print_info("Belum ada users")
-            print()
-            input(f"{Colors.BOLD}Press Enter to continue...{Colors.ENDC}")
-        
+            self.admin_list_users()
         elif choice == '2':
-            self.menu_audit_log()
+            self.admin_view_logs()
+    
+    def admin_list_users(self):
+        """List all users with nice table"""
+        self.clear_screen()
+        self.print_header("👥 ALL USERS", "User Management")
+        
+        users = self.user_manager.list_users()
+        if users:
+            headers = ["ID", "Username", "Email", "Role", "Status", "Joined"]
+            rows = []
+            for u in users:
+                status = f"{Colors.OKGREEN}✓{Colors.ENDC}" if u['is_active'] else f"{Colors.FAIL}✗{Colors.ENDC}"
+                joined = u['created_at'][:10] if u['created_at'] else "N/A"
+                rows.append([u['id'], u['username'], u['email'], u['role'].upper(), status, joined])
+            
+            Effects.print_table(headers, rows)
+        else:
+            self.print_info("Belum ada users")
+        
+        input(f"{Colors.BOLD}Press Enter to continue...{Colors.ENDC}")
+    
+    def admin_view_logs(self):
+        """View all audit logs"""
+        self.clear_screen()
+        self.print_header("📋 ALL AUDIT LOGS", "System Activity")
+        
+        logs = self.audit.get_logs(50)
+        if logs:
+            for i, log in enumerate(logs, 1):
+                user_info = f"User#{log['user_id']}" if log['user_id'] else "SYSTEM"
+                action_color = Colors.OKGREEN if 'SUCCESS' in log['action'] else Colors.FAIL if 'FAILED' in log['action'] else Colors.WARNING
+                
+                print(f"{i:2}. {action_color}[{log['action']}]{Colors.ENDC} | {user_info}")
+                print(f"    └─ {log['details']}")
+                print(f"    └─ {log['timestamp']} | {log['ip_address']}\n")
+        else:
+            self.print_info("Belum ada audit log")
+        
+        input(f"{Colors.BOLD}Press Enter to continue...{Colors.ENDC}")
     
     def logout(self):
         """Logout user"""
-        self.audit.log_action(self.current_user_id, 'LOGOUT', 'User logout')
+        self.audit.log_action(self.current_user_id, 'LOGOUT', f'User {self.current_username} logout')
+        print()
+        Effects.loading_animation(1, "Logging out")
+        print()
+        self.print_success(f"Goodbye {self.current_username}!")
         self.current_user_id = None
         self.current_username = None
-        self.print_success("Logout berhasil")
         time.sleep(1)
+    
+    def menu_exit(self):
+        """Exit menu"""
+        self.clear_screen()
+        print(f"\n{Colors.OKGREEN}{Colors.BOLD}╔════════════════════════════════════════════════════════╗{Colors.ENDC}")
+        print(f"{Colors.OKGREEN}{Colors.BOLD}║{Colors.ENDC}  Thank you for using LoginTabSystem!                  {Colors.OKGREEN}{Colors.BOLD}║{Colors.ENDC}")
+        print(f"{Colors.OKGREEN}{Colors.BOLD}║{Colors.ENDC}  Stay secure and stay safe!                            {Colors.OKGREEN}{Colors.BOLD}║{Colors.ENDC}")
+        print(f"{Colors.OKGREEN}{Colors.BOLD}╚════════════════════════════════════════════════════════╝{Colors.ENDC}\n")
+        sys.exit(0)
 
 # ============================================
 # MAIN
@@ -671,17 +913,25 @@ def main():
         # Initialize with demo users if database is empty
         users = system.db.fetch_all('SELECT COUNT(*) as count FROM users')
         if users[0]['count'] == 0:
-            print(f"{Colors.OKBLUE}Initializing system with demo users...{Colors.ENDC}")
+            system.clear_screen()
+            print(f"{Colors.OKBLUE}{Colors.BOLD}╔════════════════════════════════════════════════════════╗{Colors.ENDC}")
+            print(f"{Colors.OKBLUE}{Colors.BOLD}║{Colors.ENDC}  🚀 Initializing LoginTabSystem...                     {Colors.OKBLUE}{Colors.BOLD}║{Colors.ENDC}")
+            print(f"{Colors.OKBLUE}{Colors.BOLD}╚════════════════════════════════════════════════════════╝{Colors.ENDC}\n")
+            
+            Effects.loading_animation(2, "Creating demo users")
             
             # Create admin user
             system.user_manager.register('admin', 'admin@localhost', 'Admin@123456')
+            Effects.progress_bar(50, 100)
             
             # Create demo user
             system.user_manager.register('demo', 'demo@localhost', 'Demo@123456')
+            Effects.progress_bar(100, 100)
+            print()
             
-            print(f"{Colors.OKGREEN}Demo users created!{Colors.ENDC}")
-            print(f"{Colors.WARNING}Admin credentials: admin / Admin@123456{Colors.ENDC}")
-            print(f"{Colors.WARNING}Demo credentials: demo / Demo@123456{Colors.ENDC}")
+            print(f"{Colors.OKGREEN}✓ Demo users created!{Colors.ENDC}")
+            print(f"{Colors.WARNING}Admin credentials: {Colors.BOLD}admin{Colors.ENDC}{Colors.WARNING} / {Colors.BOLD}Admin@123456{Colors.ENDC}")
+            print(f"{Colors.WARNING}Demo credentials:  {Colors.BOLD}demo{Colors.ENDC}{Colors.WARNING} / {Colors.BOLD}Demo@123456{Colors.ENDC}\n")
             time.sleep(3)
         
         system.menu_main()
@@ -691,6 +941,8 @@ def main():
         sys.exit(0)
     except Exception as e:
         print(f"\n{Colors.FAIL}Error: {str(e)}{Colors.ENDC}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 if __name__ == "__main__":
